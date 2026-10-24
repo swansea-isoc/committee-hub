@@ -17,6 +17,9 @@ s = p.read_text()
 marker = '/* Compact phone layouts: wrap controls rather than hide overflowing content. */'
 if marker not in s:
     s += '\n' + marker + '\n.page-title>div{min-width:0}.page-title h1{overflow-wrap:anywhere}.task-title,.task-detail,.comment p{overflow-wrap:anywhere}\n@media(max-width:720px){.page-title{flex-wrap:wrap;gap:12px}.page-title>div{flex:1 1 240px}.file-toolbar,.file-toolbar>div:last-child,.dropzone,.integration{flex-wrap:wrap}.file-toolbar>div{min-width:0}.breadcrumbs{flex-wrap:wrap;overflow-wrap:anywhere}.integration>div{min-width:0}.form-actions{flex-wrap:wrap}}\n'
+marker2 = '/* Narrow section controls */'
+if marker2 not in s:
+    s += '\n' + marker2 + '\n@media(max-width:720px){.section-head{flex-wrap:wrap}.section-head>h2,.section-head>div{min-width:0}.section-head .button{max-width:100%;white-space:normal}}\n'
 p.write_text(s)
 
 p = Path('tools/test_workspace.py')
