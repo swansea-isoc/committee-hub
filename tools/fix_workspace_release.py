@@ -16,5 +16,17 @@ p = Path('tools/test_workspace.py')
 s = p.read_text()
 s = s.replace("page.locator('#f-title').fill('Test media request')", "page.locator('#media-create #f-title').fill('Test media request')")
 s = s.replace("checks.append('Executive action assignment')", "expect(page.locator('#drawer')).not_to_be_visible();expect(page.locator('#drawer-body')).to_be_empty();checks.append('Executive action assignment and synchronous removal of closed forms')")
+old_loop = "            page.set_viewport_size({'width':width,'height':900});page.goto(URL+'#'+route,wait_until='networkidle');assert page.evaluate('document.documentElement.scrollWidth<=innerWidth'),f'Overflow {route} {width}'"
+new_loop = """            page.set_viewport_size({'width':width,'height':900})
+            page.evaluate('(name)=>{location.hash=name}', route)
+            title = {'actions':'Action points','media':'Media','finance':'Reimbursements','files':'Shared files','people':'Who’s who','wellbeing':'Well-being','settings':'Settings'}[route]
+            expect(page).to_have_title(title + ' · Swansea ISOC')
+            expect(page.locator('#main')).to_be_visible()
+            page.evaluate('() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+            assert page.evaluate('document.documentElement.scrollWidth<=innerWidth'),f'Overflow {route} {width}'"""
+if old_loop in s:
+    s = s.replace(old_loop, new_loop)
+elif new_loop not in s:
+    raise RuntimeError('Unexpected viewport loop')
 p.write_text(s)
-print('Dialog cleanup and regression checks applied.')
+print('Dialog cleanup and deterministic navigation readiness checks applied.')
