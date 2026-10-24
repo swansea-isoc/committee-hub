@@ -1,0 +1,84 @@
+name: Validate main committee workspace
+on:
+  push:
+    branches: [hub-main-v3-20261024]
+    paths: ['tools/v3-payload/**', '.github/workflows/apply-workspace-v3.yml', 'site/**', 'server/**', 'tools/test_workspace.py', 'tools/database-check.sql']
+  workflow_dispatch:
+permissions:
+  contents: write
+defaults:
+  run:
+    shell: bash
+jobs:
+  validate:
+    if: github.repository == 'swansea-isoc/committee-hub' && github.ref == 'refs/heads/hub-main-v3-20261024'
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: disposable-ci-password
+          POSTGRES_DB: hub_check
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '22'}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: Materialise reviewed source on first run
+        run: |
+          pip install brotli
+          python - <<'PY'
+          import base64,brotli,hashlib,json,pathlib
+          root=pathlib.Path('.')
+          if not (root/'site/workspace.js').exists():
+              raw=brotli.decompress(base64.b64decode(''.join((root/f'tools/v3-payload/{n:02}.txt').read_text().strip() for n in range(8))))
+              assert hashlib.sha256(raw).hexdigest()=='d441db73fa98c465524cb868ee03f6243870512d292add8698f71744f48a46bf','Source checksum differs'
+              bundle=json.loads(raw)
+              allowed={'README.md','SETUP.md','site/index.html','site/config.js','site/demo.html','site/workspace.css','site/workspace.js','server/schema.sql','server/index.ts','server/policy.mjs','server/agent.gs','server/.env.example','server/config.toml','server/check-types.d.ts','tools/policy.test.mjs','tools/database-check.sql','tools/test_workspace.py','.github/workflows/publish-hub.yml'}
+              assert set(bundle['files'])==allowed
+              for name,text in bundle['files'].items():
+                  file=root/name;file.parent.mkdir(parents=True,exist_ok=True);file.write_text(text)
+              removable={'site/hub.js','site/hub.css','tools/materialise_preview.py','tools/test_hub.py'}|{f'tools/preview-payload/{n:02}.txt' for n in range(6)}
+              assert set(bundle['remove'])==removable
+              for name in bundle['remove']:(root/name).unlink(missing_ok=True)
+          PY
+      - name: Validate JavaScript and access policies
+        run: |
+          mkdir -p checks
+          node --check site/workspace.js
+          node --check site/config.js
+          node --test tools/policy.test.mjs | tee checks/policy.txt
+      - name: Test schema, reminder scheduling and recipient isolation
+        env:
+          PGPASSWORD: disposable-ci-password
+        run: psql -h localhost -U postgres -d hub_check -f tools/database-check.sql | tee checks/database.txt
+      - name: Install browser checks
+        run: |
+          pip install playwright
+          playwright install --with-deps chromium
+      - name: Test responsive app against synthetic API responses
+        run: python tools/test_workspace.py
+      - name: Commit validated source to the upgrade branch only
+        if: success()
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add README.md SETUP.md site server tools .github/workflows/publish-hub.yml
+          git diff --cached --quiet || (git commit -m 'Add dark main workspace, server permissions, reminders, private files and finance services' && git push origin HEAD:hub-main-v3-20261024)
+      - name: Save source and check results for review
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: committee-main-v3-checks
+          path: |
+            checks/
+            site/
+            server/
+            tools/test_workspace.py
+            tools/database-check.sql
+          include-hidden-files: true
+          retention-days: 7
