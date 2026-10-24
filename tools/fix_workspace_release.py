@@ -12,6 +12,13 @@ elif new not in s:
 s = s.replace("$('drawer').addEventListener('close',()=>{$('drawer-body').innerHTML='';dirty=false;});", "$('drawer').addEventListener('close',()=>{if(!$('drawer').open){$('drawer-body').replaceChildren();dirty=false;}});")
 p.write_text(s)
 
+p = Path('site/workspace.css')
+s = p.read_text()
+marker = '/* Compact phone layouts: wrap controls rather than hide overflowing content. */'
+if marker not in s:
+    s += '\n' + marker + '\n.page-title>div{min-width:0}.page-title h1{overflow-wrap:anywhere}.task-title,.task-detail,.comment p{overflow-wrap:anywhere}\n@media(max-width:720px){.page-title{flex-wrap:wrap;gap:12px}.page-title>div{flex:1 1 240px}.file-toolbar,.file-toolbar>div:last-child,.dropzone,.integration{flex-wrap:wrap}.file-toolbar>div{min-width:0}.breadcrumbs{flex-wrap:wrap;overflow-wrap:anywhere}.integration>div{min-width:0}.form-actions{flex-wrap:wrap}}\n'
+p.write_text(s)
+
 p = Path('tools/test_workspace.py')
 s = p.read_text()
 s = s.replace("page.locator('#f-title').fill('Test media request')", "page.locator('#media-create #f-title').fill('Test media request')")
@@ -23,10 +30,18 @@ new_loop = """            page.set_viewport_size({'width':width,'height':900})
             expect(page).to_have_title(title + ' · Swansea ISOC')
             expect(page.locator('#main')).to_be_visible()
             page.evaluate('() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
-            assert page.evaluate('document.documentElement.scrollWidth<=innerWidth'),f'Overflow {route} {width}'"""
+            if width == 320:
+                page.screenshot(path=str(OUT / (route + '-320.png')), full_page=True)
+            if not page.evaluate('document.documentElement.scrollWidth<=innerWidth'):
+                offenders = page.locator('body *').evaluate_all('(els)=>els.filter(e=>{const r=e.getBoundingClientRect();return r.width>0&&r.right>innerWidth+1}).map(e=>({tag:e.tagName,cls:e.className,text:e.textContent.slice(0,80),right:e.getBoundingClientRect().right})).slice(0,12)')
+                raise AssertionError(f'Overflow {route} {width}: {offenders}')"""
 if old_loop in s:
     s = s.replace(old_loop, new_loop)
-elif new_loop not in s:
-    raise RuntimeError('Unexpected viewport loop')
+else:
+    start = s.find("            page.set_viewport_size({'width':width,'height':900})\n            page.evaluate('(name)=>{location.hash=name}', route)")
+    end = s.find("    checks.append('Every authenticated page fits", start)
+    if start < 0 or end < 0:
+        raise RuntimeError('Unexpected viewport loop')
+    s = s[:start] + new_loop + '\n' + s[end:]
 p.write_text(s)
-print('Dialog cleanup and deterministic navigation readiness checks applied.')
+print('Dialog cleanup, compact layouts and deterministic navigation checks applied.')
