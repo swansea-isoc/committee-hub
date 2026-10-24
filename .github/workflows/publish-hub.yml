@@ -1,0 +1,102 @@
+name: Publish committee hub preview
+on:
+  push:
+    branches: [main]
+    paths: ['site/**', 'tools/**', '.github/workflows/publish-hub.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: committee-hub-pages
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pages: read
+    outputs:
+      pages_ready: ${{ steps.pages.outputs.ready }}
+      site_url: ${{ steps.pages.outputs.url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Import the supplied public preview on first run
+        run: |
+          if [ ! -f site/index.html ]; then
+            python tools/materialise_preview.py
+          fi
+      - name: Validate JavaScript
+        run: |
+          node --check site/hub.js
+          node --check site/config.js
+      - name: Install browser testing tools
+        run: |
+          pip install playwright
+          playwright install --with-deps chromium
+      - name: Test mobile views and sample permissions
+        run: python tools/test_hub.py
+      - name: Save verified source files in this repository only
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add site/
+          git diff --cached --quiet || (git commit -m "Add tested public committee-hub V2 source and supplied artwork" && git push origin HEAD:main)
+      - name: Check whether GitHub Pages has been enabled
+        id: pages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          code=$(curl -sS -o "$RUNNER_TEMP/hub-pages.json" -w '%{http_code}' \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/pages")
+          if [ "$code" = "200" ] && [ "$(jq -r '.build_type' "$RUNNER_TEMP/hub-pages.json")" = "workflow" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+            echo "url=$(jq -r '.html_url' "$RUNNER_TEMP/hub-pages.json")" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo '## Upload and browser checks complete' >> "$GITHUB_STEP_SUMMARY"
+            echo 'Enable Pages in this repository: Settings → Pages → Source → GitHub Actions. Then run this workflow using Run workflow.' >> "$GITHUB_STEP_SUMMARY"
+            echo "https://github.com/$GITHUB_REPOSITORY/settings/pages" >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Upload public website artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: site
+      - name: Save preview screenshots and browser-check report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: committee-hub-preview-checks
+          path: |
+            checks/
+            site/
+          include-hidden-files: true
+          retention-days: 7
+  deploy:
+    if: needs.build.outputs.pages_ready == 'true'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Publish the static prototype
+        id: deployment
+        uses: actions/deploy-pages@v4
+      - name: Record access links
+        env:
+          SITE_URL: ${{ steps.deployment.outputs.page_url }}
+        run: |
+          echo "## Committee hub preview published" >> "$GITHUB_STEP_SUMMARY"
+          echo "Design preview: ${SITE_URL}demo.html" >> "$GITHUB_STEP_SUMMARY"
+          echo "Locked private entry: ${SITE_URL}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Preview only: no live sign-in, ClickUp, OneDrive, emails or private finance records." >> "$GITHUB_STEP_SUMMARY"
