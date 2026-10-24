@@ -1,0 +1,4 @@
+[functions.committee-api]
+verify_jwt = false
+# The function verifies Google access tokens itself. Mail/import agents use separate secret headers.
+# Never deploy with both these checks removed.
