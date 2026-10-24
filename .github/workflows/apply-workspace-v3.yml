@@ -41,6 +41,8 @@ jobs:
               allowed={'README.md','SETUP.md','site/index.html','site/config.js','site/demo.html','site/workspace.css','site/workspace.js','server/schema.sql','server/index.ts','server/policy.mjs','server/agent.gs','server/.env.example','server/config.toml','server/check-types.d.ts','tools/policy.test.mjs','tools/database-check.sql','tools/test_workspace.py','.github/workflows/publish-hub.yml'}
               assert set(bundle['files'])==allowed
               for name,text in bundle['files'].items():
+                  if name.startswith('.github/'):
+                      continue
                   file=root/name;file.parent.mkdir(parents=True,exist_ok=True);file.write_text(text)
               removable={'site/hub.js','site/hub.css','tools/materialise_preview.py','tools/test_hub.py'}|{f'tools/preview-payload/{n:02}.txt' for n in range(6)}
               assert set(bundle['remove'])==removable
@@ -64,12 +66,12 @@ jobs:
           playwright install --with-deps chromium
       - name: Test responsive app against synthetic API responses
         run: python tools/test_workspace.py
-      - name: Commit validated source to the upgrade branch only
+      - name: Commit validated application source to the upgrade branch only
         if: success()
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add README.md SETUP.md site server tools .github/workflows/publish-hub.yml
+          git add README.md SETUP.md site server tools
           git diff --cached --quiet || (git commit -m 'Add tested dark workspace and private service source; live connections still required' && git push origin HEAD:hub-main-v3-20261024)
       - name: Save source and check results for review
         if: always()
