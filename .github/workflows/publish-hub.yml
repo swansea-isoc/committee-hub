@@ -8,7 +8,7 @@ permissions:
   contents: read
 concurrency:
   group: committee-hub-pages
-  cancel-in-progress: false
+  cancel-in-progress: true
 defaults:
   run:
     shell: bash
@@ -37,6 +37,8 @@ jobs:
           node --check site/workspace.js
           node --check site/config.js
           node --test tools/policy.test.mjs | tee checks/policy.txt
+      - name: Check live Google-provider configuration and anonymous-access rejection
+        run: python tools/check_public_connection.py
       - name: Verify disposable database schema and reminders
         env:
           PGPASSWORD: disposable-ci-password
@@ -45,8 +47,18 @@ jobs:
         run: |
           pip install playwright
           playwright install --with-deps chromium
-      - name: Test phone layouts and interfaces using synthetic API responses
-        run: python tools/test_workspace.py
+      - name: Test phone layouts and interfaces using isolated configuration and synthetic API responses
+        run: |
+          # The first test explicitly exercises an UNCONFIGURED installation.
+          # The rest inject configured auth/API test doubles. Never invoke the live backend in this suite.
+          cp site/config.js "$RUNNER_TEMP/hub-public-config.js"
+          trap 'cp "$RUNNER_TEMP/hub-public-config.js" site/config.js' EXIT
+          printf "window.HUB_CONFIG = Object.freeze({supabaseUrl:'',supabasePublishableKey:'',apiFunction:'committee-api',edition:'2026 / 27'});\n" > site/config.js
+          python tools/test_workspace.py
+          cp "$RUNNER_TEMP/hub-public-config.js" site/config.js
+          trap - EXIT
+          # Fail rather than publish a fixture or any modified connection file.
+          git diff --exit-code -- site/config.js
       - name: Upload only public frontend files for Pages
         uses: actions/upload-pages-artifact@v4
         with:
@@ -79,5 +91,5 @@ jobs:
         run: |
           echo "## Committee workspace frontend published" >> "$GITHUB_STEP_SUMMARY"
           echo "Main entry: ${SITE_URL}" >> "$GITHUB_STEP_SUMMARY"
-          echo "This publishes static frontend files only, not the private backend." >> "$GITHUB_STEP_SUMMARY"
-          echo "Google OAuth, the private database and storage, and email agent require separate activation and real-account testing. With empty configuration the app denies workspace access." >> "$GITHUB_STEP_SUMMARY"
+          echo "Live checks cover Google-provider enablement and anonymous API denial only." >> "$GITHUB_STEP_SUMMARY"
+          echo "Owner settings and a real Google-account login still need testing. Publishing does not activate reminder emails." >> "$GITHUB_STEP_SUMMARY"
