@@ -1,0 +1,56 @@
+name: Check browser sign-in recovery
+on:
+  push:
+    branches: [fix/browser-google-signin, main]
+    paths: ['tools/fix_browser_signin.py', 'tools/auth-recovery.test.mjs', 'site/workspace.js', '.github/workflows/check-browser-signin.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  check:
+    if: github.repository == 'swansea-isoc/committee-hub'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '22'}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: Apply narrow source patch on the repair branch
+        if: github.ref == 'refs/heads/fix/browser-google-signin'
+        run: python tools/fix_browser_signin.py
+      - name: Validate syntax and isolated sign-in tests
+        run: |
+          mkdir -p checks
+          node --check site/workspace.js
+          node --test tools/auth-recovery.test.mjs | tee checks/auth-recovery.txt
+          node --test tools/policy.test.mjs | tee checks/policy.txt
+      - name: Install browser tools
+        run: |
+          pip install playwright
+          playwright install --with-deps chromium
+      - name: Verify existing responsive workspace and access screens with test doubles
+        run: |
+          cp site/config.js "$RUNNER_TEMP/real-public-config.js"
+          trap 'cp "$RUNNER_TEMP/real-public-config.js" site/config.js' EXIT
+          printf "window.HUB_CONFIG = Object.freeze({supabaseUrl:'',supabasePublishableKey:'',apiFunction:'committee-api',edition:'2026 / 27'});\n" > site/config.js
+          python tools/test_workspace.py
+          cp "$RUNNER_TEMP/real-public-config.js" site/config.js
+          trap - EXIT
+          git diff --exit-code -- site/config.js
+      - name: Save validated application patch only
+        if: github.ref == 'refs/heads/fix/browser-google-signin'
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add site/workspace.js site/index.html
+          git diff --cached --quiet || (git commit -m 'Improve Google account selection and browser-scoped sign-in recovery' && git push origin HEAD:fix/browser-google-signin)
+      - name: Save check results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-signin-checks
+          path: checks/
+          retention-days: 7
