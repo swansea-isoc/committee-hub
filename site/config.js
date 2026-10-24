@@ -1,11 +1,9 @@
-/* Public settings only. Real committee data, emails and private URLs belong in the server database.
-   live: fail-closed unless Google auth and the hub API are configured.
-   demo.html: a separate sample-only interface, never a security gate. */
+/* PUBLIC connection details only. Never add a password, email allowlist, service key or private record here.
+   Set these once the dedicated private backend and Google provider have been configured. */
 window.HUB_CONFIG = Object.freeze({
-  mode: 'live',
   supabaseUrl: '',
   supabasePublishableKey: '',
-  apiFunction: 'hub-api',
-  redirectUrl: '',
+  apiFunction: 'committee-api',
+  redirectUrl: 'https://swansea-isoc.github.io/committee-hub/',
   edition: '2026 / 27'
 });
