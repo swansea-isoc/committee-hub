@@ -2,7 +2,7 @@ name: Validate main committee workspace
 on:
   push:
     branches: [hub-main-v3-20261024]
-    paths: ['tools/v3-payload/**', '.github/workflows/apply-workspace-v3.yml', 'site/**', 'server/**', 'tools/test_workspace.py', 'tools/database-check.sql']
+    paths: ['tools/v3-payload/**', '.github/workflows/apply-workspace-v3.yml', 'site/**', 'server/**', 'tools/test_workspace.py', 'tools/database-check.sql', 'tools/fix_workspace_release.py']
   workflow_dispatch:
 permissions:
   contents: write
@@ -21,7 +21,7 @@ jobs:
           POSTGRES_DB: hub_check
         ports: ['5432:5432']
         options: >-
-          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -46,6 +46,8 @@ jobs:
               assert set(bundle['remove'])==removable
               for name in bundle['remove']:(root/name).unlink(missing_ok=True)
           PY
+      - name: Repair drawer lifecycle and test regressions
+        run: python tools/fix_workspace_release.py
       - name: Validate JavaScript and access policies
         run: |
           mkdir -p checks
@@ -68,7 +70,7 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add README.md SETUP.md site server tools .github/workflows/publish-hub.yml
-          git diff --cached --quiet || (git commit -m 'Add dark main workspace, server permissions, reminders, private files and finance services' && git push origin HEAD:hub-main-v3-20261024)
+          git diff --cached --quiet || (git commit -m 'Add tested dark workspace and private service source; live connections still required' && git push origin HEAD:hub-main-v3-20261024)
       - name: Save source and check results for review
         if: always()
         uses: actions/upload-artifact@v4
@@ -80,5 +82,7 @@ jobs:
             server/
             tools/test_workspace.py
             tools/database-check.sql
+            README.md
+            SETUP.md
           include-hidden-files: true
           retention-days: 7
