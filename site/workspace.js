@@ -1,6 +1,8 @@
 'use strict';
 (() => {
 const cfg=window.HUB_CONFIG||{}, $=id=>document.getElementById(id);
+// Sign-in recovery 2026-10-25
+let authReady=false,signingIn=false;
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const paths={home:'M3 10 12 3l9 7v11h-6v-7H9v7H3z',actions:'M9 5h12 M9 12h12 M9 19h12 M2 5l2 2 3-4 M2 12l2 2 3-4 M2 19l2 2 3-4',media:'M3 5h18v14H3z M3 16l6-6 4 4 3-3 5 5 M16 8h.01',finance:'M3 5h17v16H3z M3 5V3h13v2 M15 10h7v6h-7z M18 13h.01',folder:'M3 5h7l2 3h9v13H3z',people:'M16 21v-2a6 6 0 0 0-12 0v2 M14 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0 M18 4a4 4 0 0 1 0 8 M21 21v-2a6 6 0 0 0-3-5',heart:'M20 5a5 5 0 0 0-8 1 5 5 0 0 0-8-1C-2 11 12 21 12 21S26 11 20 5z',arrow:'M4 12h16 M14 6l6 6-6 6',plus:'M12 5v14 M5 12h14',lock:'M5 10h14v12H5z M8 10V6a4 4 0 0 1 8 0v4 M12 14v4',search:'M17 10a7 7 0 1 1-14 0 7 7 0 0 1 14 0 M15 15l6 6',board:'M3 4h18v16H3z M9 4v16 M15 4v16',list:'M8 6h13 M8 12h13 M8 18h13 M3 6h.01 M3 12h.01 M3 18h.01',file:'M5 2h9l5 5v15H5z M14 2v6h5 M8 12h8 M8 16h6',more:'M4 12h.01 M12 12h.01 M20 12h.01',bell:'M18 8a6 6 0 0 0-12 0c0 7-3 8-3 8h18s-3-1-3-8 M10 20h4',mail:'M3 5h18v14H3z m0-14 9 7 9-7',check:'m5 12 4 4L19 6',upload:'M12 16V3 M6 9l6-6 6 6 M3 16v5h18v-5',download:'M12 3v13 M6 10l6 6 6-6 M3 17v4h18v-4',calendar:'M3 5h18v16H3z M3 10h18 M7 2v6 M17 2v6',external:'M7 17 17 7 M7 7h10v10',settings:'M12 8a4 4 0 1 1 0 8 4 4 0 0 1 0-8 M12 2v3 M12 19v3 M2 12h3 M19 12h3 M5 5l2 2 M17 17l2 2 M5 19l2-2 M17 7l2-2',logout:'M9 3H3v18h6 M9 12h12 M16 7l5 5-5 5',clock:'M12 3a9 9 0 1 1 0 18 9 9 0 0 1 0-18 M12 7v6h4'};
 const ic=(n)=>`<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="${paths[n]||paths.file}"/></svg>`;
@@ -28,7 +30,7 @@ function taskRow(t){const r=rag(t);return `<button class="task-row" data-cmd="ta
 function heading(title,desc,action=''){return `<div class="page-title"><div><h1>${title}</h1><p class="muted">${desc}</p></div>${action}</div>`;}
 function drawer(title,content,kicker='SWANSEA ISOC'){opener=document.activeElement;$('drawer-kicker').textContent=kicker;$('drawer-body').innerHTML=`<h2 id="drawer-title">${esc(title)}</h2>${content}`;if(!$('drawer').open)$('drawer').showModal();$('close-drawer').focus();dirty=false;}
 function close(force=false){if(dirty&&!force&&!confirm('Discard your unsaved changes?'))return false;const returnTo=opener;$('drawer-body').replaceChildren();dirty=false;if($('drawer').open)$('drawer').close();if(returnTo?.isConnected)returnTo.focus();return true;}
-async function api(action,payload={}){if(!client)throw new Error('Private services are not connected. Nothing has been sent.');const {data:s,error}=await client.auth.getSession();if(error||!s?.session)throw new Error('Your session has ended. Please sign in again.');const res=await fetch(cfg.supabaseUrl.replace(/\/$/,'')+'/functions/v1/'+(cfg.apiFunction||'committee-api'),{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+s.session.access_token,'apikey':cfg.supabasePublishableKey},body:JSON.stringify({action,...payload}),signal:AbortSignal.timeout(25000)});const body=await res.json().catch(()=>({error:'The service returned an unreadable response.'}));if(!res.ok){if(res.status===401||res.status===403){if(body.code==='MEMBERSHIP_DENIED'){await client.auth.signOut();me=null;authScreen(body.error);}}throw new Error(body.error||'The request could not be completed.');}return body;}
+async function api(action,payload={}){if(!client)throw new Error('Private services are not connected. Nothing has been sent.');const {data:s,error}=await client.auth.getSession();if(error||!s?.session)throw new Error('Your session has ended. Please sign in again.');const res=await fetch(cfg.supabaseUrl.replace(/\/$/,'')+'/functions/v1/'+(cfg.apiFunction||'committee-api'),{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+s.session.access_token,'apikey':cfg.supabasePublishableKey},body:JSON.stringify({action,...payload}),signal:AbortSignal.timeout(25000)});const body=await res.json().catch(()=>({error:'The service returned an unreadable response.'}));if(!res.ok){if(res.status===401||res.status===403){if(body.code==='MEMBERSHIP_DENIED'){await client.auth.signOut({scope:'local'});me=null;authScreen(body.error);}}throw new Error(body.error||'The request could not be completed.');}return body;}
 async function refresh(){if(booting){queuedRefresh=true;return;}booting=true;try{data=await api('bootstrap');me=data.user;if(!me)throw new Error('Your Google account has not been approved.');if(page==='files')await loadFiles();render();}catch(e){if(!me)authScreen(e.message);else toast(e.message);}finally{booting=false;if(queuedRefresh){queuedRefresh=false;refresh();}}}
 function nav(id,mobile=false){return `<a href="#${id}" ${page===id?'aria-current="page"':''} class="${page===id?'active':''}">${ic(iconFor[id])}${mobile&&id==='actions'?'Actions':mobile&&id==='finance'?'Expenses':names[id]}</a>`;}
 function render(){if(!me)return;if(!names[page])page='space';if(page==='settings'&&!isAdmin())page='space';$('app').innerHTML=`<header class="wrap masthead"><a class="brand" href="#space"><img src="assets/isoc-emblem.png" alt="" width="46" height="46"><span><strong>SWANSEA ISOC</strong><small>Committee workspace</small></span></a><div class="head-right"><span class="eyebrow edition">${esc(cfg.edition||'2026 / 27')}</span><button class="icon-button" data-cmd="notifications" aria-label="Your notifications">${ic('bell')}${data.notifications.some(n=>!n.read)?'<span class="notification-dot"></span>':''}</button><button class="profile" data-cmd="profile"><span class="avatar">${esc(initials(me.name))}</span><span class="name">${esc(me.name.split(' ')[0])}<span class="small">${esc(me.title)}</span></span></button></div></header><nav class="topnav wrap" aria-label="Committee pages">${Object.keys(names).filter(k=>k!=='settings').map(k=>nav(k)).join('')}</nav><main id="main" class="workspace wrap"></main><footer class="wrap footer"><span>SWANSEA ISOC · COMMITTEE</span><span>With sincerity. Together.</span></footer><nav class="bottomnav" aria-label="Mobile navigation">${['space','actions','media','files'].map(k=>nav(k,true)).join('')}<button data-cmd="more">${ic('more')}More</button></nav>`;const pages={space:spacePage,actions:actionsPage,media:mediaPage,finance:financePage,files:filesPage,people:peoplePage,wellbeing:wellbeingPage,settings:settingsPage};$('main').innerHTML=pages[page]();if(page==='actions')renderTasks();if(page==='files')renderFiles();document.title=names[page]+' · Swansea ISOC';}
@@ -58,8 +60,56 @@ function settingsPage(){if(!isAdmin())return '';return heading('Workspace settin
 async function membersDialog(){const r=await api('memberList');drawer('Approved accounts',`${r.members.map(m=>`<div class="link-row"><div class="member-identity"><strong>${esc(m.name)}</strong><div class="small wrap-text">${esc(m.email)} · ${esc(m.role)}</div><span class="tag ${m.active?'green':'red'}">${m.active?'Active':'Revoked'}</span></div>${m.id!==me.id?button(m.active?'Revoke':'Restore','member-toggle','quiet small-btn','',`data-id="${esc(m.id)}" data-active="${!m.active}"`):'<span class="small">You</span>'}</div>`).join('')}<p class="small section-gap">Revoking access blocks the next API request, even if a Google session still exists.</p>`,'ADMINISTRATOR');}
 function memberForm(){drawer('Approve a committee member',`<form id="member-create"><div class="form-grid">${field('Google email','email','','email',true,'required autocomplete="off"')}${field('Name','name','','text',false,'required maxlength="120"')}${field('Committee role','title','','text',false,'required maxlength="120"')}<div class="field"><label for="f-role">Access level</label><select name="role" id="f-role"><option value="member">Committee member</option><option value="exec">Executive</option></select></div><div class="field"><label for="f-team">Subcommittee</label><select name="team" id="f-team">${options(teams,'Exec')}</select></div><div class="field full"><label class="check-label"><input type="checkbox" name="media">Media-team access</label><label class="check-label"><input type="checkbox" name="finance">Gen Sec finance access</label><label class="check-label"><input type="checkbox" name="president">President-only well-being inbox (executive required)</label></div></div><p class="small section-gap">Finance access is for you and Fadumo only. Do not grant it to every executive.</p><div class="form-actions"><button type="submit" class="button">Approve account</button></div></form>`,'ACCESS MANAGEMENT');}
 async function notifications(){drawer('Your updates',data.notifications.length?data.notifications.map(n=>`<div class="notification"><strong>${esc(n.title)}</strong><span class="small">${date(n.created_at,true)}</span><span class="tag ${n.email_status==='sent'?'green':'amber'}">${n.email_status==='sent'?'Email accepted by provider':n.email_status==='off'?'In-app update':'Email '+esc(n.email_status)}</span></div>`).join(''):empty('You’re all caught up.','Your assignment and progress updates will appear here.','bell'));await api('notificationsRead');data.notifications.forEach(n=>n.read=true);}
-function authScreen(message=''){me=null;const configured=!!(cfg.supabaseUrl&&cfg.supabasePublishableKey);$('app').innerHTML=`<main id="main" class="auth"><section class="auth-identity"><a class="brand" href="./"><img src="assets/isoc-emblem.png" width="46" height="46" alt=""><span><strong>SWANSEA ISOC</strong><small>Committee workspace</small></span></a><p class="eyebrow">A LITTLE LESS ADMIN. A LITTLE MORE PURPOSE.</p><h1>Good work.<br><span>Done together.</span></h1><p>Your action points, requests and shared files.<br>One considered space for the committee.</p><div class="auth-lines" aria-hidden="true"><span></span><span></span><span></span></div></section><section class="auth-card"><p class="eyebrow">WELCOME BACK</p><h2>Your committee space.</h2><p class="muted">Sign in with your approved Google account.</p>${message?`<p class="notice error" role="alert">${esc(message)}</p>`:''}<button class="button" data-cmd="google" ${!configured?'disabled':''}><span class="g" aria-hidden="true">G</span>Continue with Google</button>${!configured?'<div class="status-inline"><i class="dot"></i>Private sign-in is not connected yet.</div><details><summary>Administrator setup</summary><p>Connect the dedicated Supabase project and Google sign-in provider. No committee records, emails or uploads are available until setup is complete.</p></details>':''}<div class="lock-note">${ic('lock')}<span>Approved committee accounts only.<br>Your session stays signed in on this device.</span></div></section></main>`;}
-async function login(){if(!client)return;const {error}=await client.auth.signInWithOAuth({provider:'google',options:{redirectTo:cfg.redirectUrl||new URL('./',location.href).href}});if(error)throw error;}
+function authScreen(message=''){me=null;const configured=!!(cfg.supabaseUrl&&cfg.supabasePublishableKey);$('app').innerHTML=`<main id="main" class="auth"><section class="auth-identity"><a class="brand" href="./"><img src="assets/isoc-emblem.png" width="46" height="46" alt=""><span><strong>SWANSEA ISOC</strong><small>Committee workspace</small></span></a><p class="eyebrow">A LITTLE LESS ADMIN. A LITTLE MORE PURPOSE.</p><h1>Good work.<br><span>Done together.</span></h1><p>Your action points, requests and shared files.<br>One considered space for the committee.</p><div class="auth-lines" aria-hidden="true"><span></span><span></span><span></span></div></section><section class="auth-card"><p class="eyebrow">WELCOME BACK</p><h2>Your committee space.</h2><p class="muted">Sign in with your approved Google account.</p>${message?`<p class="notice error" role="alert">${esc(message)}</p>`:''}<button class="button" data-cmd="google" ${(!configured||!authReady||signingIn)?'disabled':''}><span class="g" aria-hidden="true">G</span>${signingIn?'Opening Google…':configured&&!authReady?'Checking sign-in…':'Continue with Google'}</button>${!configured?'<div class="status-inline"><i class="dot"></i>Private sign-in is not connected yet.</div><details><summary>Administrator setup</summary><p>Connect the dedicated Supabase project and Google sign-in provider. No committee records, emails or uploads are available until setup is complete.</p></details>':''}${configured&&authReady?`<details class="section-gap"><summary>Trouble signing in?</summary><p class="small">Restart this hub’s saved sign-in on this browser. This does not clear your Google cookies, affect other websites, or delete committee records.</p><button type="button" class="button secondary" data-cmd="reset-login" ${signingIn?'disabled':''}>Restart sign-in</button></details>`:''}<div class="lock-note">${ic('lock')}<span>Approved committee accounts only.<br>Your session stays signed in on this device.</span></div></section></main>`;}
+function clearAuthLocation(){
+ const u=new URL(location.href);
+ for(const k of ['code','error','error_code','error_description','error_uri'])u.searchParams.delete(k);
+ const h=new URLSearchParams(u.hash.slice(1));
+ if(['error','error_description','access_token','refresh_token'].some(k=>h.has(k)))u.hash='';
+ history.replaceState(history.state,'',u.pathname+u.search+u.hash);
+}
+function callbackError(){
+ const q=new URLSearchParams(location.search),h=new URLSearchParams(location.hash.slice(1));
+ return q.get('error_code')||q.get('error')||h.get('error_code')||h.get('error')||'';
+}
+function signinMessage(e){
+ const code=String(e?.code||e||'');
+ if(code==='access_denied')return 'Google sign-in was cancelled or not permitted. Choose your approved account and try again.';
+ return 'Sign-in did not finish. Use Restart sign-in below, then choose your approved Google account. Keep the sign-in in this browser tab.';
+}
+async function login(){
+ if(!client||!authReady||signingIn)return;
+ signingIn=true;authScreen();
+ try{
+  // PKCE must survive the round trip in this browser; do not silently use memory-only storage.
+  try{localStorage.setItem('__isoc_hub_storage_probe__','1');localStorage.removeItem('__isoc_hub_storage_probe__');}
+  catch{throw new Error('Allow this site to save browser data before signing in.');}
+  clearAuthLocation();
+  const redirectTo=cfg.redirectUrl||new URL('./',location.href).href;
+  const {data:result,error}=await client.auth.signInWithOAuth({provider:'google',options:{redirectTo,queryParams:{prompt:'select_account'},skipBrowserRedirect:true}});
+  if(error)throw error;
+  const target=new URL(result?.url||'');
+  if(target.origin!==new URL(cfg.supabaseUrl).origin||target.pathname!=='/auth/v1/authorize')throw new Error('The sign-in service returned an unexpected address.');
+  // SDK generates a new PKCE verifier; Supabase generates/validates OAuth state. Never forge either.
+  location.assign(target.href);
+ }catch(e){signingIn=false;authScreen(e?.message==='Allow this site to save browser data before signing in.'?e.message:'Google sign-in could not start. Please try again.');}
+}
+async function resetLogin(){
+ if(!client||!authReady||signingIn)return;
+ signingIn=true;authScreen();
+ let timer;
+ try{
+  // Revoke only this browser's session, not a successful phone/incognito session.
+  await Promise.race([client.auth.signOut({scope:'local'}),new Promise(resolve=>{timer=setTimeout(resolve,8000);})]);
+ }catch{/* Local recovery must still work if a stale session cannot reach the server. */}
+ finally{clearTimeout(timer);}
+ try{
+  const prefix='sb-'+new URL(cfg.supabaseUrl).hostname.split('.')[0]+'-auth-token';
+  for(const store of [localStorage,sessionStorage])for(const suffix of ['','-code-verifier','-user'])store.removeItem(prefix+suffix);
+ }catch{signingIn=false;authScreen('Allow this site to save browser data, then try again.');return;}
+ // Discard stale in-memory auth too. Only the canonical hub page is reopened.
+ location.replace(cfg.redirectUrl||new URL('./',location.href).href);
+}
 function go(v){if(location.hash==='#'+v){page=v;render();}else location.hash=v;}
 async function submit(form){if(busy)return;busy=true;const b=form.querySelector('[type=submit]');if(b)b.disabled=true;try{const fd=new FormData(form),v=Object.fromEntries(fd);let result,notice='Saved.';
  if(form.id==='task-create'){result=await api('taskCreate',{task:{title:v.title,owner:v.owner,team:v.team,due:dateISO(v.due),priority:v.priority,description:v.description},initialReminder:v.initialReminder?Number(v.initialReminder):null});notice=result.warning||'Action assigned.';}
@@ -76,9 +126,9 @@ async function submit(form){if(busy)return;busy=true;const b=form.querySelector(
  close(true);await refresh();toast(notice);
  }catch(e){toast(e.message||'The request failed. Nothing has been confirmed.');}finally{busy=false;if(b?.isConnected)b.disabled=false;}}
 async function command(el){const c=el.dataset.cmd,id=el.dataset.id;
- if(c==='google')return login();if(c==='go')return go(el.dataset.page);if(c==='close')return close();
+ if(c==='google')return login();if(c==='reset-login')return resetLogin();if(c==='go')return go(el.dataset.page);if(c==='close')return close();
  if(c==='profile')return drawer(me.name,`<p class="muted">${esc(me.title)}</p><p class="small">${esc(me.team||'Committee')}</p>${isAdmin()?button('Workspace settings','settings','secondary','settings'):''}<div class="section-gap">${button('Sign out of this device','logout','quiet','logout')}</div>`,'YOUR ACCOUNT');
- if(c==='logout'){close(true);await client.auth.signOut();data={tasks:[],people:[],media:[],claims:[],notifications:[],resources:[]};files=[];authScreen();return;}
+ if(c==='logout'){close(true);await client.auth.signOut({scope:'local'});data={tasks:[],people:[],media:[],claims:[],notifications:[],resources:[]};files=[];authScreen();return;}
  if(c==='settings'){close(true);return go('settings');}
  if(c==='more')return drawer('Your committee',`<nav class="nav-menu">${['finance','people','wellbeing',...(isAdmin()?['settings']:[])].map(k=>`<a href="#${k}" data-close-nav>${ic(iconFor[k])}${names[k]}</a>`).join('')}</nav>`);
  if(c==='task')return taskDialog(id);if(c==='new-task')return newTask();if(c==='reminders')return reminders(id);
@@ -100,7 +150,25 @@ document.addEventListener('dragover',e=>{const zone=e.target.closest('#dropzone'
 $('close-drawer').addEventListener('click',()=>close());$('drawer').addEventListener('cancel',e=>{if(dirty){e.preventDefault();close();}});$('drawer').addEventListener('close',()=>{if(!$('drawer').open){$('drawer-body').replaceChildren();dirty=false;}});
 window.addEventListener('hashchange',async()=>{page=location.hash.slice(1)||'space';if(!me)return;try{if(page==='files')await loadFiles();render();window.scrollTo(0,0);}catch(e){toast(e.message);}});
 window.addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue='';}});
-async function start(){page=location.hash.slice(1)||'space';authScreen();if(!cfg.supabaseUrl||!cfg.supabasePublishableKey)return;try{const u=new URL(cfg.supabaseUrl);if(u.protocol!=='https:'||!u.hostname.endsWith('.supabase.co'))throw new Error('The private backend address is invalid.');await new Promise((resolve,reject)=>{const s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.57.4/dist/umd/supabase.js';s.onload=resolve;s.onerror=()=>reject(new Error('Google sign-in could not load. Please try again.'));document.head.append(s);});client=window.supabase.createClient(cfg.supabaseUrl,cfg.supabasePublishableKey,{auth:{flowType:'pkce',persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});client.auth.onAuthStateChange((event)=>{if(event==='SIGNED_OUT'){close(true);me=null;data={tasks:[],people:[],media:[],claims:[],notifications:[],resources:[]};files=[];authScreen();}if(event==='SIGNED_IN'&&!me)setTimeout(refresh,0);});const {data:s,error}=await client.auth.getSession();if(error)throw error;if(s.session)await refresh();else authScreen();}catch(e){authScreen(e.message);}}
+async function start(){
+ page=location.hash.slice(1)||'space';const problem=callbackError();authScreen();
+ if(!cfg.supabaseUrl||!cfg.supabasePublishableKey)return;
+ try{
+  const u=new URL(cfg.supabaseUrl);if(u.protocol!=='https:'||!u.hostname.endsWith('.supabase.co'))throw new Error('The private backend address is invalid.');
+  await new Promise((resolve,reject)=>{const s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.57.4/dist/umd/supabase.js';s.onload=resolve;s.onerror=()=>reject(new Error('Google sign-in could not load. Please refresh the page.'));document.head.append(s);});
+  client=window.supabase.createClient(cfg.supabaseUrl,cfg.supabasePublishableKey,{auth:{flowType:'pkce',persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
+  client.auth.onAuthStateChange((event)=>{
+   if(event==='SIGNED_OUT'){close(true);me=null;data={tasks:[],people:[],media:[],claims:[],notifications:[],resources:[]};files=[];authScreen();}
+   if(event==='SIGNED_IN'&&!me)setTimeout(()=>{authReady=true;clearAuthLocation();refresh();},0);
+  });
+  const {data:s,error}=await client.auth.getSession();authReady=true;
+  if(error){clearAuthLocation();authScreen(signinMessage(error));return;}
+  if(s.session){clearAuthLocation();await refresh();}
+  else{if(problem)clearAuthLocation();authScreen(problem?signinMessage(problem):'');}
+ }catch(e){authReady=!!client;if(client)clearAuthLocation();authScreen(client?signinMessage(e):e.message);}
+}
+// Browser Back can restore a disabled button from the back/forward cache.
+window.addEventListener('pageshow',e=>{if(e.persisted&&!me){signingIn=false;authScreen();}});
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&me&&!dirty)refresh();});
 start();
 })();
